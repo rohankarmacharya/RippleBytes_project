@@ -46,7 +46,7 @@ func TestCreateAccountGroup(t *testing.T) {
 
 	req := CreateAccountGroupRequest{
 		Description:   "Test group via SDK",
-		Name:          fmt.Sprintf("Area-Pokhara-%d", time.Now().UnixNano()),
+		Name:          fmt.Sprintf("Area-Humla-%d", time.Now().UnixNano()),
 		ParentGroupID: &parentID,
 	}
 
@@ -86,33 +86,36 @@ func TestUpdateAccountGroup(t *testing.T) {
 
 	parentID := "09e47ddb-1ce1-488c-b4e8-2fd255f2203a" // Direct Expenses
 
-	// First create a group to update
-	createReq := CreateAccountGroupRequest{
-		Description:   "Group to be updated via SDK test",
-		Name:          fmt.Sprintf("Area-Update-%d", time.Now().UnixNano()),
+	// First create a group to update - SKIPPED as per user request to test update directly
+	// createReq := CreateAccountGroupRequest{
+	// 	Description:   "Group to be updated via SDK test",
+	// 	Name:          fmt.Sprintf("Area-Update111-%d", time.Now().UnixNano()),
+	// 	ParentGroupID: &parentID,
+	// }
+
+	// createdGroup, err := service.CreateAccountGroup(createReq)
+	// if err != nil {
+	// 	if strings.Contains(err.Error(), "Invalid signature") {
+	// 		t.Skip("Tigg signature validation not configured for this environment; skipping update account group integration test")
+	// 	}
+	// 	t.Fatalf("CreateAccountGroup failed for update test: %v", err)
+	// }
+
+	// if createdGroup.ID == "" {
+	// 	t.Fatal("expected non-empty ID for created account group in update test")
+	// }
+
+	targetID := "4b5d175f-efcf-4fd3-8953-4171db360b8e"
+
+	updateReq := UpdateAccountGroupRequest{
+		ID:          targetID,
+		Description: "Updated description via SDK test direct updatesssss",
+		Name:        fmt.Sprintf("Area-Jumla-%d", time.Now().UnixNano()), // Random name to avoid unique constraint if any
+		// Keep same parent for simplicity
 		ParentGroupID: &parentID,
 	}
 
-	createdGroup, err := service.CreateAccountGroup(createReq)
-	if err != nil {
-		if strings.Contains(err.Error(), "Invalid signature") {
-			t.Skip("Tigg signature validation not configured for this environment; skipping update account group integration test")
-		}
-		t.Fatalf("CreateAccountGroup failed for update test: %v", err)
-	}
-
-	if createdGroup.ID == "" {
-		t.Fatal("expected non-empty ID for created account group in update test")
-	}
-
-	updateReq := UpdateAccountGroupRequest{
-		Description: "Updated description via SDK test",
-		Name:        createReq.Name,
-		// Keep same parent for simplicity
-		ParentGroupID: createReq.ParentGroupID,
-	}
-
-	updatedGroup, err := service.UpdateAccountGroup(createdGroup.ID, updateReq)
+	updatedGroup, err := service.UpdateAccountGroup(targetID, updateReq)
 	if err != nil {
 		if strings.Contains(err.Error(), "Invalid signature") {
 			t.Skip("Tigg signature validation not configured for this environment; skipping update account group integration test")
@@ -120,8 +123,28 @@ func TestUpdateAccountGroup(t *testing.T) {
 		t.Fatalf("UpdateAccountGroup failed: %v", err)
 	}
 
-	if updatedGroup.ID != createdGroup.ID {
-		t.Fatalf("expected updated group ID %q to match created group ID %q", updatedGroup.ID, createdGroup.ID)
+	t.Logf("Target ID: %s", targetID)
+	t.Logf("Updated ID: %s", updatedGroup.ID)
+
+	// CRITICAL ASSERTION: The updated group MUST have the same ID as the original group.
+	// If it has a different ID, it means a new record was created instead of updating the existing one.
+	if updatedGroup.ID != targetID {
+		t.Fatalf("Update created a NEW record (ID: %s) instead of updating existing (ID: %s)", updatedGroup.ID, targetID)
+	}
+
+	// Verify that we didn't accidentally create a duplicate by searching for the name.
+	// We expect exactly one group with this name.
+	// Note: account names are unique in Tigg so if we found the name, it should be the same ID.
+	fetchedByName, err := service.GetAccountGroupByName(updateReq.Name)
+	if err != nil {
+		t.Fatalf("Failed to retrieve group by name after update: %v", err)
+	}
+	if fetchedByName.ID != targetID {
+		t.Fatalf("Found a duplicate/different group with same name! Original ID: %s, Found ID: %s", targetID, fetchedByName.ID)
+	}
+
+	if updatedGroup.ID != targetID {
+		t.Fatalf("expected updated group ID %q to match created group ID %q", updatedGroup.ID, targetID)
 	}
 }
 

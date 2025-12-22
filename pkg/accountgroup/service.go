@@ -193,7 +193,16 @@ func (s *Service) GetAccountGroupByName(name string) (*AccountGroup, error) {
 
 // UpdateAccountGroup
 func (s *Service) UpdateAccountGroup(id string, reqBody UpdateAccountGroupRequest) (*AccountGroup, error) {
+	// SAFEGUARD: The 'id' is strictly required. Providing an ID identifies this as an UPDATE operation.
+	// If the ID is missing or empty in the payload, Tigg will treat this as a CREATE operation and generate a new record!
+	if id == "" {
+		return nil, fmt.Errorf("id is required for update to prevent duplicate creation")
+	}
+
+	// FORCE the ID from the function argument into the payload to guarantee it's present.
+	// This ensures Tigg sees the 'id' field in the JSON body.
 	reqBody.ID = id
+
 	url := fmt.Sprintf("%s/account-groups/%s", s.client.BaseURL, id)
 
 	// Generate timestamp (ms) and nonce as required by Tigg signature spec
