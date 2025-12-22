@@ -94,10 +94,10 @@ func (s *Service) signPayload(method, url string, payload interface{}) (*http.Re
 		return nil, errors.ErrInvalidPayLoad
 	}
 
-	// 2. Base64 Encode
+	// 2. Base64 Encode: converts binary data into an ASCII string format; converts the JSON payload into a string
 	payloadString := base64.StdEncoding.EncodeToString(unsignedJSON)
 
-	// 3. Sign
+	// 3. Sign: creates a hash of the payload string using HMAC-SHA256
 	mac := hmac.New(sha256.New, []byte(s.client.SecretKey))
 	mac.Write([]byte(payloadString))
 	signature := hex.EncodeToString(mac.Sum(nil))

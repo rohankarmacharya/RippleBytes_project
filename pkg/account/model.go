@@ -16,3 +16,22 @@ type Account struct {
 	Inactive         bool    `json:"inactive"`
 	CreatedAt        string  `json:"created_at"`
 }
+
+// CreateAccountRequest is the payload used when creating an account.
+type CreateAccountRequest struct {
+	Name            string  `json:"name"`
+	Code            string  `json:"code"`
+	ParentGroupID   *string `json:"parent_group_id,omitempty"`
+	ParentGroupName *string `json:"parent_group_name,omitempty"`
+	Description     string  `json:"description,omitempty"`
+}
+
+// UpdateAccountRequest is the payload used when updating an account.
+type UpdateAccountRequest struct {
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Code            string  `json:"code"`
+	ParentGroupID   *string `json:"parent_group_id,omitempty"`
+	ParentGroupName *string `json:"parent_group_name,omitempty"`
+	Description     string  `json:"description,omitempty"`
+}
