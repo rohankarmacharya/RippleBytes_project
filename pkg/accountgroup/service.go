@@ -25,65 +25,92 @@ func NewService(c *client.TiggClient) *Service {
 	return &Service{client: c}
 }
 
+// ListAccountGroups
+type accountGroupListResponse struct {
+	Data []AccountGroup `json:"data"`
+}
+
+func (s *Service) ListAccountGroups() ([]AccountGroup, error) {
+	url := fmt.Sprintf("%s/account-groups", s.client.BaseURL)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	s.client.AddHeaders(req)
+
+	resp, err := s.client.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, errors.NewTiggError(resp)
+	}
+
+	var res accountGroupListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, err
+	}
+
+	return res.Data, nil
+}
+
 // CreateAccountGroup
 type createAccountGroupResponse struct {
 	Data AccountGroup `json:"data"`
 }
 
-func (s *Service) CreateAccountGroup(reqBody CreateAccountGroupRequest) (*AccountGroup, error) {
-	url := fmt.Sprintf("%s/account-groups", s.client.BaseURL)
-
-	// Generate timestamp (ms) and nonce as required by Tigg signature spec
+// signPayload handles the Tigg API signature generation and request creation
+func (s *Service) signPayload(method, url string, payload interface{}) (*http.Request, error) {
+	// Generate timestamp (ms) and nonce
 	timestampMs := time.Now().UnixMilli()
 	nonce := fmt.Sprintf("%d", time.Now().UnixNano())
 
-	// Build unsigned payload with timestamp and nonce
-	type unsignedPayload struct {
-		CreateAccountGroupRequest
-		Timestamp int64  `json:"timestamp"`
-		Nonce     string `json:"nonce"`
+	// Create a dynamic struct to hold the payload + signature fields
+	// We use a map[string]interface{} to merge the original payload with extra fields
+	// This avoids defining specific structs for every request type
+	finalPayload := make(map[string]interface{})
+
+	// helper to marshal->unmarshal to map
+	if payload != nil {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(b, &finalPayload); err != nil {
+			return nil, err
+		}
 	}
 
-	up := unsignedPayload{
-		CreateAccountGroupRequest: reqBody,
-		Timestamp:                 timestampMs,
-		Nonce:                     nonce,
-	}
+	// 1. Create Unsigned Payload (Payload + Timestamp + Nonce)
+	finalPayload["timestamp"] = timestampMs
+	finalPayload["nonce"] = nonce
 
-	unsignedJSON, err := json.Marshal(up)
+	unsignedJSON, err := json.Marshal(finalPayload)
 	if err != nil {
 		return nil, errors.ErrInvalidPayLoad
 	}
 
-	// Base64-encode the JSON string
+	// 2. Base64 Encode
 	payloadString := base64.StdEncoding.EncodeToString(unsignedJSON)
 
-	// Sign the base64-encoded payload with HMAC-SHA256 using the client secret
+	// 3. Sign
 	mac := hmac.New(sha256.New, []byte(s.client.SecretKey))
 	mac.Write([]byte(payloadString))
 	signature := hex.EncodeToString(mac.Sum(nil))
 
-	// Final payload includes the signature alongside timestamp and nonce
-	type signedPayload struct {
-		CreateAccountGroupRequest
-		Timestamp int64  `json:"timestamp"`
-		Nonce     string `json:"nonce"`
-		Signature string `json:"signature"`
-	}
+	// 4. Add Signature to Payload
+	finalPayload["signature"] = signature
 
-	sp := signedPayload{
-		CreateAccountGroupRequest: reqBody,
-		Timestamp:                 timestampMs,
-		Nonce:                     nonce,
-		Signature:                 signature,
-	}
-
-	payloadBytes, err := json.Marshal(sp)
+	signedJSON, err := json.Marshal(finalPayload)
 	if err != nil {
 		return nil, errors.ErrInvalidPayLoad
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequest(method, url, bytes.NewBuffer(signedJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +118,16 @@ func (s *Service) CreateAccountGroup(reqBody CreateAccountGroupRequest) (*Accoun
 	s.client.AddHeaders(req)
 	req.Header.Set("X-Nonce", nonce)
 	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", timestampMs))
+
+	return req, nil
+}
+
+func (s *Service) CreateAccountGroup(reqBody CreateAccountGroupRequest) (*AccountGroup, error) {
+	url := fmt.Sprintf("%s/account-groups", s.client.BaseURL)
+	req, err := s.signPayload("POST", url, reqBody)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := s.client.HTTPClient.Do(req)
 	if err != nil {
@@ -142,39 +179,6 @@ func (s *Service) GetAccountGroupByID(id string) (*AccountGroup, error) {
 	return &res.Data, nil
 }
 
-// ListAccountGroups
-type accountGroupListResponse struct {
-	Data []AccountGroup `json:"data"`
-}
-
-func (s *Service) ListAccountGroups() ([]AccountGroup, error) {
-	url := fmt.Sprintf("%s/account-groups", s.client.BaseURL)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	s.client.AddHeaders(req)
-
-	resp, err := s.client.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return nil, errors.NewTiggError(resp)
-	}
-
-	var res accountGroupListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, err
-	}
-
-	return res.Data, nil
-}
-
 // GetAccountGroupByName performs a ListAccountGroups call and searches by exact name.
 func (s *Service) GetAccountGroupByName(name string) (*AccountGroup, error) {
 	groups, err := s.ListAccountGroups()
@@ -193,76 +197,16 @@ func (s *Service) GetAccountGroupByName(name string) (*AccountGroup, error) {
 
 // UpdateAccountGroup
 func (s *Service) UpdateAccountGroup(id string, reqBody UpdateAccountGroupRequest) (*AccountGroup, error) {
-	// SAFEGUARD: The 'id' is strictly required. Providing an ID identifies this as an UPDATE operation.
-	// If the ID is missing or empty in the payload, Tigg will treat this as a CREATE operation and generate a new record!
 	if id == "" {
 		return nil, fmt.Errorf("id is required for update to prevent duplicate creation")
 	}
-
-	// FORCE the ID from the function argument into the payload to guarantee it's present.
-	// This ensures Tigg sees the 'id' field in the JSON body.
 	reqBody.ID = id
 
 	url := fmt.Sprintf("%s/account-groups/%s", s.client.BaseURL, id)
-
-	// Generate timestamp (ms) and nonce as required by Tigg signature spec
-	timestampMs := time.Now().UnixMilli()
-	nonce := fmt.Sprintf("%d", time.Now().UnixNano())
-
-	// Build unsigned payload with timestamp and nonce
-	type unsignedUpdatePayload struct {
-		UpdateAccountGroupRequest
-		Timestamp int64  `json:"timestamp"`
-		Nonce     string `json:"nonce"`
-	}
-
-	up := unsignedUpdatePayload{
-		UpdateAccountGroupRequest: reqBody,
-		Timestamp:                 timestampMs,
-		Nonce:                     nonce,
-	}
-
-	unsignedJSON, err := json.Marshal(up)
-	if err != nil {
-		return nil, errors.ErrInvalidPayLoad
-	}
-
-	// Base64-encode the JSON string
-	payloadString := base64.StdEncoding.EncodeToString(unsignedJSON)
-
-	// Sign the base64-encoded payload with HMAC-SHA256 using the client secret
-	mac := hmac.New(sha256.New, []byte(s.client.SecretKey))
-	mac.Write([]byte(payloadString))
-	signature := hex.EncodeToString(mac.Sum(nil))
-
-	// Final payload includes the signature alongside timestamp and nonce
-	type signedUpdatePayload struct {
-		UpdateAccountGroupRequest
-		Timestamp int64  `json:"timestamp"`
-		Nonce     string `json:"nonce"`
-		Signature string `json:"signature"`
-	}
-
-	sp := signedUpdatePayload{
-		UpdateAccountGroupRequest: reqBody,
-		Timestamp:                 timestampMs,
-		Nonce:                     nonce,
-		Signature:                 signature,
-	}
-
-	payloadBytes, err := json.Marshal(sp)
-	if err != nil {
-		return nil, errors.ErrInvalidPayLoad
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(payloadBytes))
+	req, err := s.signPayload("POST", url, reqBody) // Update uses POST as per original code
 	if err != nil {
 		return nil, err
 	}
-
-	s.client.AddHeaders(req)
-	req.Header.Set("X-Nonce", nonce)
-	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", timestampMs))
 
 	resp, err := s.client.HTTPClient.Do(req)
 	if err != nil {
@@ -282,38 +226,47 @@ func (s *Service) UpdateAccountGroup(id string, reqBody UpdateAccountGroupReques
 }
 
 // Activate/Deactivate AccountGroup
-func (s *Service) ActivateAccountGroup(id string) error {
+// ActivateAccountGroup
+func (s *Service) ActivateAccountGroup(id string) (*AccountGroup, error) {
 	url := fmt.Sprintf("%s/account-groups/%s/active", s.client.BaseURL, id)
-	req, _ := http.NewRequest("PATCH", url, nil)
-	s.client.AddHeaders(req)
+	// Even if there's no body content, we might need the signature wrapper.
+	// Passing an empty struct or nil. Let's try passing empty struct to ensure signature fields are added.
+	req, err := s.signPayload("PATCH", url, map[string]string{})
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := s.client.HTTPClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return errors.NewTiggError(resp)
+		return nil, errors.NewTiggError(resp)
 	}
 
-	return nil
+	// API returns success status but not the object, so we fetch it
+	return s.GetAccountGroupByID(id)
 }
 
-func (s *Service) DeactivateAccountGroup(id string) error {
+func (s *Service) DeactivateAccountGroup(id string) (*AccountGroup, error) {
 	url := fmt.Sprintf("%s/account-groups/%s/inactive", s.client.BaseURL, id)
-	req, _ := http.NewRequest("PATCH", url, nil)
-	s.client.AddHeaders(req)
+	req, err := s.signPayload("PATCH", url, map[string]string{})
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := s.client.HTTPClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return errors.NewTiggError(resp)
+		return nil, errors.NewTiggError(resp)
 	}
 
-	return nil
+	// API returns success status but not the object, so we fetch it
+	return s.GetAccountGroupByID(id)
 }
