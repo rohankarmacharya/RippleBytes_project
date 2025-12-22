@@ -157,20 +157,20 @@ func TestListAccountGroups(t *testing.T) {
 	}
 }
 
-// func TestActivateAccountGroup(t *testing.T) {
-// 	service := newTestService(t)
+func TestActivateAccountGroup(t *testing.T) {
+	service := newTestService(t)
 
-// 	targetID := "4a86ff27-820f-471d-80d5-4b4961932b8f"
+	targetID := "4a86ff27-820f-471d-80d5-4b4961932b8f"
 
-// 	updated, err := service.ActivateAccountGroup(targetID)
-// 	if err != nil {
-// 		t.Fatalf("ActivateAccountGroup failed: %v", err)
-// 	}
+	updated, err := service.ActivateAccountGroup(targetID)
+	if err != nil {
+		t.Fatalf("ActivateAccountGroup failed: %v", err)
+	}
 
-// 	if updated.Inactive {
-// 		t.Fatalf("expected account group to be active")
-// 	}
-// }
+	if updated.Inactive {
+		t.Fatalf("expected account group to be active")
+	}
+}
 
 func TestDeactivateAccountGroup(t *testing.T) {
 	service := newTestService(t)

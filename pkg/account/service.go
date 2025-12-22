@@ -204,45 +204,45 @@ func (s *Service) GetAccountByCode(code string) (*Account, error) {
 }
 
 // ActivateAccount sends PATCH /accounts/{id}/active request to Tigg
-func (s *Service) ActivateAccount(id string) error {
+func (s *Service) ActivateAccount(id string) (*Account, error) {
 	url := fmt.Sprintf("%s/accounts/%s/active", s.client.BaseURL, id)
 
 	req, err := s.signPayload("PATCH", url, map[string]string{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	resp, err := s.client.HTTPClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return errors.NewTiggError(resp)
+		return nil, errors.NewTiggError(resp)
 	}
 
-	return nil
+	return s.GetAccountByID(id)
 }
 
 // DeactivateAccount sends PATCH /accounts/{id}/inactive request to Tigg
-func (s *Service) DeactivateAccount(id string) error {
+func (s *Service) DeactivateAccount(id string) (*Account, error) {
 	url := fmt.Sprintf("%s/accounts/%s/inactive", s.client.BaseURL, id)
 
 	req, err := s.signPayload("PATCH", url, map[string]string{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	resp, err := s.client.HTTPClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return errors.NewTiggError(resp)
+		return nil, errors.NewTiggError(resp)
 	}
 
-	return nil
+	return s.GetAccountByID(id)
 }
