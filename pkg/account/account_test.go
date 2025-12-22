@@ -1,8 +1,11 @@
 package account
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/rohankarmacharya/TigIntegration/pkg/client"
@@ -198,37 +201,112 @@ func getTiggConfig(t *testing.T) client.Config {
 // }
 
 // Manual testing for Activate account
-func TestActivateAccount(t *testing.T) {
-	cfg := getTiggConfig(t)
-	cl := client.New(cfg)
-	svc := NewService(cl)
-
-	targetID := "1ccc5e66-0e0e-4bfd-ba30-867d5ac29a3c"
-
-	updated, err := svc.ActivateAccount(targetID)
-	if err != nil {
-		t.Fatalf("ActivateAccount failed: %v", err)
-	}
-
-	if updated.Inactive {
-		t.Fatalf("expected account to be active")
-	}
-}
-
-// Manual testing for Deactivate account
-// func TestDeactivateAccount(t *testing.T) {
+// func TestActivateAccount(t *testing.T) {
 // 	cfg := getTiggConfig(t)
 // 	cl := client.New(cfg)
 // 	svc := NewService(cl)
 
 // 	targetID := "1ccc5e66-0e0e-4bfd-ba30-867d5ac29a3c"
 
-// 	updated, err := svc.DeactivateAccount(targetID)
+// 	updated, err := svc.ActivateAccount(targetID)
 // 	if err != nil {
-// 		t.Fatalf("DeactivateAccount failed: %v", err)
+// 		t.Fatalf("ActivateAccount failed: %v", err)
 // 	}
 
-// 	if !updated.Inactive {
-// 		t.Fatalf("expected account to be inactive")
+// 	if updated.Inactive {
+// 		t.Fatalf("expected account to be active")
 // 	}
 // }
+
+// Manual testing for Deactivate account
+func TestDeactivateAccount(t *testing.T) {
+	cfg := getTiggConfig(t)
+	cl := client.New(cfg)
+	svc := NewService(cl)
+
+	targetID := "1ccc5e66-0e0e-4bfd-ba30-867d5ac29a3c"
+
+	updated, err := svc.DeactivateAccount(targetID)
+	if err != nil {
+		t.Fatalf("DeactivateAccount failed: %v", err)
+	}
+
+	if !updated.Inactive {
+		t.Fatalf("expected account to be inactive")
+	}
+}
+
+func TestUpdateAccount(t *testing.T) {
+	cfg := getTiggConfig(t)
+	cl := client.New(cfg)
+	svc := NewService(cl)
+
+	// 1. Create a fresh account to update
+	timestamp := time.Now().UnixNano()
+	parentGroupID := "09e47ddb-1ce1-488c-b4e8-2fd255f2203a"
+	createReq := Account{
+		Code:          fmt.Sprintf("UPD-%d", timestamp),
+		Name:          fmt.Sprintf("Update Test %d", timestamp),
+		ParentGroupID: &parentGroupID,
+	}
+
+	created, err := svc.CreateAccount(createReq)
+	if err != nil {
+		if strings.Contains(err.Error(), "namespace is not registered") {
+			t.Skip("Tigg namespace is not registered; skipping")
+		}
+		t.Fatalf("Failed to create account for update test: %v", err)
+	}
+	t.Logf("Created Account for update: %+v", created)
+
+	// 2. Perform update
+	updateReq := UpdateAccountRequest{
+		Name:          fmt.Sprintf("Updated Name %d", timestamp),
+		Code:          created.Code, // Keep same code assigned by API
+		Description:   "Updated description",
+		ParentGroupID: &parentGroupID,
+	}
+
+	updated, err := svc.UpdateAccount(created.ID, updateReq)
+	if err != nil {
+		t.Fatalf("UpdateAccount failed: %v", err)
+	}
+
+	// 3. Assertions
+	if updated.ID != created.ID {
+		t.Errorf("Update created a new record! Expected ID %s, got %s", created.ID, updated.ID)
+	}
+	if updated.Name != updateReq.Name {
+		t.Errorf("Expected name %s, got %s", updateReq.Name, updated.Name)
+	}
+	if updated.Description != updateReq.Description {
+		t.Errorf("Expected description %s, got %s", updateReq.Description, updated.Description)
+	}
+}
+
+func TestManualUpdateAccount(t *testing.T) {
+	cfg := getTiggConfig(t)
+	cl := client.New(cfg)
+	svc := NewService(cl)
+
+	targetID := "1ccc5e66-0e0e-4bfd-ba30-867d5ac29a3c"
+	timestamp := time.Now().UnixNano()
+	parentGroupID := "09e47ddb-1ce1-488c-b4e8-2fd255f2203a"
+
+	updateReq := UpdateAccountRequest{
+		Name:          fmt.Sprintf("Manual Update %d", timestamp),
+		Code:          "DE0060", // Original code for this ID
+		Description:   "Manually updated via test",
+		ParentGroupID: &parentGroupID,
+	}
+
+	updated, err := svc.UpdateAccount(targetID, updateReq)
+	if err != nil {
+		t.Fatalf("UpdateAccount failed for ID %s: %v", targetID, err)
+	}
+
+	if updated.Name != updateReq.Name {
+		t.Errorf("Expected name %s, got %s", updateReq.Name, updated.Name)
+	}
+	t.Logf("Successfully updated account %s to name %s", targetID, updated.Name)
+}

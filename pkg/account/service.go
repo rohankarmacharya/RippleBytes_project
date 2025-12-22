@@ -133,8 +133,13 @@ func (s *Service) CreateAccount(acc Account) (*Account, error) {
 	return &res.Data, nil
 }
 
-// UpdateAccount sends POST /accounts/{id} request to Tigg
-func (s *Service) UpdateAccount(id string, acc Account) (*Account, error) {
+// UpdateAccount sends POST /accounts/{id} request to Tigg to update an existing account.
+func (s *Service) UpdateAccount(id string, acc UpdateAccountRequest) (*Account, error) {
+	if id == "" {
+		return nil, fmt.Errorf("id is required for update to prevent duplicate creation")
+	}
+	acc.ID = id
+
 	url := fmt.Sprintf("%s/accounts/%s", s.client.BaseURL, id)
 
 	req, err := s.signPayload("POST", url, acc)
@@ -152,11 +157,7 @@ func (s *Service) UpdateAccount(id string, acc Account) (*Account, error) {
 		return nil, errors.NewTiggError(resp)
 	}
 
-	var res accountResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, err
-	}
-	return &res.Data, nil
+	return s.GetAccountByID(id)
 }
 
 // GetAccountByID sends GET /accounts/{id} request to Tigg
